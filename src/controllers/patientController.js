@@ -499,7 +499,15 @@ LIMIT 1`,
   a.id,
   a.family_member_id, 
   d.doctorName,
+  d.degree AS qualification,
   d.specialization,
+d.consultationFee AS consultationFee,
+  dc.city,
+  d.experience_years AS experience,
+  d.rating,
+  dc.clinic_name,
+  dc.languages,
+  dc.address,
   u.profile_image,
   a.appointment_type,
   a.appointment_date,
@@ -510,6 +518,7 @@ LIMIT 1`,
   fm.relation
 FROM appointments a
 JOIN doctors d ON a.doctor_id = d.id
+JOIN doctor_clinics dc ON a.doctor_id = dc.doctor_id
 JOIN users u
   ON u.id = d.user_id
 LEFT JOIN family_members fm
@@ -672,6 +681,40 @@ WHERE d.id = ?`,
     });
   }
 };
+
+// getCurrentToken controller
+exports.getCurrentToken = async (req, res) => {
+  const { doctorId, appointmentDate, appointmentSlot } = req.query;
+
+  try {
+    console.log(req.query);
+
+    const [[result]] = await db.query(
+      `SELECT COUNT(*) AS currentToken
+       FROM appointments
+       WHERE doctor_id = ?
+       AND DATE(appointment_date) = DATE(?)
+       AND UPPER(appointment_slot) = UPPER(?)`,
+      [doctorId, appointmentDate, appointmentSlot]
+    );
+
+    console.log("DB Result:", result);
+
+    return res.json({
+      success: true,
+      currentToken: result.currentToken || 0,
+    });
+  } catch (err) {
+    console.log(err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: err.message,
+    });
+  }
+};
+
 // getdoctorname controller
 
 exports.getDoctorNames = async (req, res) => {
@@ -702,7 +745,7 @@ exports.getDoctorNames = async (req, res) => {
 // exports.getCities = async (req, res) => {
 //   try {
 //     const [rows] = await db.query(`
-//       SELECT DISTINCT 
+//       SELECT DISTINCT
 //         dc.city,
 //         dc.address,
 //         dc.landmark,
@@ -729,8 +772,6 @@ exports.getDoctorNames = async (req, res) => {
 //     });
 //   }
 // };
-
-
 
 exports.getCities = async (req, res) => {
   try {
@@ -783,14 +824,13 @@ exports.getCities = async (req, res) => {
         `%${search}%`,
         `${search}%`,
         `${search}%`,
-      ]
+      ],
     );
 
     return res.status(200).json({
       success: true,
       data: rows,
     });
-
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -798,7 +838,6 @@ exports.getCities = async (req, res) => {
     });
   }
 };
-
 
 // disease controller
 
@@ -912,7 +951,7 @@ exports.bookVisitAppointment = async (req, res) => {
       availabilityRows.length === 0 ||
       !availabilityRows[0]
     ) {
-      throw new Error("Doctor not available");
+      throw new Error("Doctor not available this day");
     }
 
     const avail = availabilityRows[0];
@@ -1110,6 +1149,7 @@ exports.getClinicAppointments = async (req, res) => {
 
 exports.cancelAppointment = async (req, res) => {
   const userId = req.user.id;
+
   const appointmentId = parseInt(req.params.id, 10);
 
   if (!appointmentId || appointmentId <= 0) {
@@ -1121,25 +1161,23 @@ exports.cancelAppointment = async (req, res) => {
 
   try {
     const [result] = await db.query(
-      `UPDATE appointments a
-       JOIN appointment_patients ap
-         ON a.id = ap.appointment_id
-       SET a.status = 'CANCELLED'
-       WHERE a.id = ?
-       AND ap.patient_id = ?
-       AND a.status IN ('PENDING','ACCEPTED')
-       AND a.appointment_date > CURDATE()`,
-      [appointmentId, userId],
+      `UPDATE appointments
+       SET status = 'CANCELLED'
+       WHERE id = ?
+       AND patient_id = ?
+       AND status IN ('PENDING','ACCEPTED')
+       AND appointment_date >= CURDATE()`,
+      [appointmentId, userId]
     );
 
     if (result.affectedRows === 0) {
       return res.status(400).json({
         success: false,
-        message: "Cannot cancel appointment",
+        message:
+          "Only pending or accepted future appointments can be cancelled",
       });
     }
 
-    // Emit after DB success
     eventBus.emit(APPOINTMENT_CANCELLED_BY_PATIENT, {
       eventType: APPOINTMENT_CANCELLED_BY_PATIENT,
       appointmentId,
@@ -1151,6 +1189,8 @@ exports.cancelAppointment = async (req, res) => {
       message: "Appointment cancelled successfully",
     });
   } catch (err) {
+    console.log(err);
+
     return res.status(500).json({
       success: false,
       message: "Internal server error",

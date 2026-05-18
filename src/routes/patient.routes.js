@@ -8,7 +8,6 @@ const { allowRoles } = require("../middleware/roles");
 const { requireActiveUser } = require("../middleware/activeUser");
 const upload = require("../middleware/upload.middleware");
 
-
 // Auth
 router.post("/register", patientController.register);
 // router.post("/login", authController.login);
@@ -24,7 +23,7 @@ router.get(
   verifyToken,
   requireActiveUser,
   allowRoles("PATIENT"),
-  patientController.getDashboard
+  patientController.getDashboard,
 );
 
 // Search & filters
@@ -39,67 +38,66 @@ router.get("/doctorname", patientController.getDoctorNames);
 router.post(
   "/visit/appointments",
   verifyToken,
-  patientController.bookVisitAppointment
+  patientController.bookVisitAppointment,
 );
 router.get(
   "/getclinicvisit/appointments",
   verifyToken,
-  patientController.getClinicAppointments
+  patientController.getClinicAppointments,
 );
 
-
+router.get("/current-token", verifyToken, patientController.getCurrentToken);
 
 router.put(
   "/visit/appointments/:id/cancel",
   verifyToken,
-  patientController.cancelAppointment
+  patientController.cancelAppointment,
 );
 router.get(
   "/visit/appointments/history",
   verifyToken,
-  patientController.getVisitAppointmentHistory
+  patientController.getVisitAppointmentHistory,
 );
 
 router.post("/visit/qr-book", verifyToken, patientController.qrBookVisit);
 router.get(
   "/visit/token-status/:appointmentId",
   verifyToken,
-  patientController.getTokenStatus
+  patientController.getTokenStatus,
 );
 
 router.get(
   "/appointments/upcoming",
   verifyToken,
-  patientController.getUpcomingAppointments
+  patientController.getUpcomingAppointments,
 );
-
 
 router.post(
   "/doctor-feedback",
   verifyToken,
   allowRoles("PATIENT"),
-  patientController.submitDoctorReview
+  patientController.submitDoctorReview,
 );
 
 // Notifications
 router.get(
   "/notifications",
   verifyToken,
-  patientController.getPatientNotifications
+  patientController.getPatientNotifications,
 );
 
 // ✅ PEHLE specific route — unread-count
 router.get(
   "/notifications/unread-count",
   verifyToken,
-  patientController.getUnreadNotificationCount
+  patientController.getUnreadNotificationCount,
 );
 
 // ✅ BAAD MEIN dynamic :id route
 router.put(
   "/notifications/:id/read",
   verifyToken,
-  patientController.markNotificationRead
+  patientController.markNotificationRead,
 );
 
 // Family
@@ -109,33 +107,32 @@ router.get("/getfamily", verifyToken, patientController.getFamilyMembers);
 router.put(
   "/updatefamily/:id",
   verifyToken,
-  patientController.updateFamilyMember
+  patientController.updateFamilyMember,
 );
 router.delete(
   "/deletefamily/:id",
   verifyToken,
-  patientController.deleteFamilyMember
+  patientController.deleteFamilyMember,
 );
 
 router.get(
   "/appointments/:id/summary",
   verifyToken,
   allowRoles("PATIENT"),
-  patientController.getVisitSummary
+  patientController.getVisitSummary,
 );
 
 router.get(
   "/appointments/:appointmentId/prescription",
   verifyToken,
   allowRoles("PATIENT"),
-  patientController.getPrescription
+  patientController.getPrescription,
 );
 
 // ✅ POST API
-router.post('/bookhomecare', patientController.bookhomecareservices);
+router.post("/bookhomecare", patientController.bookhomecareservices);
 
 // ✅ GET API
-router.get('/getbookhomecare', patientController.getbookhomecareservices);
-
+router.get("/getbookhomecare", patientController.getbookhomecareservices);
 
 module.exports = router;

@@ -8,6 +8,8 @@ const cors = require("cors");
 const path = require("path");
 const expireCertificatesJob = require("../cron/expireCertificates");
 expireCertificatesJob();
+const paymentRoutes =
+require("./routes/payment");
 /* =========================
    ✅ CORS CONFIG (IMPORTANT)
    ========================= */
@@ -35,6 +37,12 @@ app.options("/{*path}", cors(corsOptions));
    ========================= */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+
+app.use(
+  "/api/payment",
+  paymentRoutes
+);
 
 /* =========================
    EVENT SYSTEM
