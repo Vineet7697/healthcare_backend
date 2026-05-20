@@ -3233,3 +3233,37 @@ exports.getDoctorProfile = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+
+exports.getAllDoctors = async (req, res) => {
+  try {
+    const [doctors] = await db.query(`
+      SELECT
+        d.id AS _id,
+        d.doctorName,
+        d.specialization,
+        d.experience_years,
+        d.rating,
+        u.profile_image
+      FROM doctors d
+      LEFT JOIN users u
+      ON d.user_id = u.id
+      WHERE d.status = 'APPROVED'
+      ORDER BY d.rating DESC
+      LIMIT 5
+    `);
+
+    return res.status(200).json({
+      success: true,
+      doctors,
+    });
+  } catch (err) {
+    console.log(err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};

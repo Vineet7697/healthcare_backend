@@ -320,4 +320,5 @@ router.post(
   doctorController.downloadQR,
 );
 
+router.get("/alldoctors", doctorController.getAllDoctors);
 module.exports = router;
