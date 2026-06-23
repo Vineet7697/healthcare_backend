@@ -1,7 +1,3 @@
-
-
-
-
 const db = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -9,8 +5,6 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
-
-
 
 const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const s3 = require("../config/s3");
@@ -32,7 +26,6 @@ const buildImageUrl = (req, relativePath) => {
   return `${req.protocol}://${req.get("host")}/${relativePath}`;
 };
 
-
 const deleteFileIfExists = async (filePath) => {
   try {
     await fs.promises.unlink(filePath);
@@ -45,7 +38,7 @@ const deleteFileIfExists = async (filePath) => {
 
 // common login api for doctor and patients
 exports.login = async (req, res) => {
-  const { identifier, password } = req.body;
+  const { identifier, password, portal } = req.body;
 
   if (!identifier || !password) {
     return res.status(400).json({
@@ -139,6 +132,22 @@ exports.login = async (req, res) => {
       [user.id],
     );
 
+    const role = user.role?.trim().toUpperCase();
+
+    if (portal === "DOCTOR" && role !== "DOCTOR") {
+      return res.status(403).json({
+        success: false,
+        message: "Only doctors can login here",
+      });
+    }
+
+    if (portal === "USER" && role === "DOCTOR") {
+      return res.status(403).json({
+        success: false,
+        message: "Please use doctor login page",
+      });
+    }
+
     /* ================= DOCTOR FLOW ================= */
     if (user.role?.trim().toUpperCase() === "DOCTOR") {
       const [[doctor]] = await db.query(
@@ -159,7 +168,7 @@ exports.login = async (req, res) => {
           role: user.role,
         },
         process.env.JWT_SECRET,
-        { expiresIn:process.env.JWT_EXPIRES_IN || "1d" },
+        { expiresIn: process.env.JWT_EXPIRES_IN || "1d" },
       );
 
       /* ===== IN_PROGRESS → Resume ===== */
@@ -169,7 +178,7 @@ exports.login = async (req, res) => {
           message: "Resume registration",
           redirect: "resume",
           nextStep: doctor.current_step + 1,
-          status: doctor.status, 
+          status: doctor.status,
           data: { token },
         });
       }
@@ -180,7 +189,7 @@ exports.login = async (req, res) => {
           success: true,
           message: "Profile under verification",
           redirect: "waiting-approval",
-          status: doctor.status, 
+          status: doctor.status,
           data: { token },
         });
       }
@@ -191,7 +200,7 @@ exports.login = async (req, res) => {
           success: true,
           message: "Login successful",
           redirect: "dashboard",
-          status: doctor.status, 
+          status: doctor.status,
           data: { token },
         });
       }
@@ -205,7 +214,7 @@ exports.login = async (req, res) => {
           role: user.role,
         },
         process.env.JWT_SECRET,
-        { expiresIn:process.env.JWT_EXPIRES_IN || "1d" },
+        { expiresIn: process.env.JWT_EXPIRES_IN || "1d" },
       );
 
       return res.status(200).json({
@@ -217,41 +226,38 @@ exports.login = async (req, res) => {
     }
 
     /* ================= ADMIN FLOW ================= */
-if (user.role?.trim().toUpperCase() === "ADMIN") {
-  const token = jwt.sign(
-    {
-      id: user.id,
-      role: user.role,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn:process.env.JWT_EXPIRES_IN || "1d" },
-  );
+    if (user.role?.trim().toUpperCase() === "ADMIN") {
+      const token = jwt.sign(
+        {
+          id: user.id,
+          role: user.role,
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN || "1d" },
+      );
 
-  return res.status(200).json({
-    success: true,
-    message: "Admin login successful",
-    redirect: "admin-dashboard",
-    data: { token },
-  });
-}
+      return res.status(200).json({
+        success: true,
+        message: "Admin login successful",
+        redirect: "admin-dashboard",
+        data: { token },
+      });
+    }
 
     /* ================= FALLBACK ================= */
     return res.status(403).json({
       success: false,
       message: "Invalid role",
     });
- } catch (err) {
-  console.error("LOGIN ERROR:", err);
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
 
-  return res.status(500).json({
-    success: false,
-    message: "Server error",
-    error: err.message
-  });
-}
-
-
-
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
+  }
 };
 
 // forget password through email or mobile number
@@ -271,7 +277,6 @@ exports.forgotPassword = async (req, res) => {
       [identifier],
     );
 
-    
     if (!user) {
       return response(res, 404, false, "Please enter correct email");
     }
@@ -305,7 +310,7 @@ exports.forgotPassword = async (req, res) => {
     await sendEmail({
       to: user.email,
       subject: "Reset Your Password",
-     html: resetPasswordTemplate(user.email, resetLink),
+      html: resetPasswordTemplate(user.email, resetLink),
     });
 
     return response(res, 200, true, "Reset link sent to your email");
@@ -410,7 +415,7 @@ exports.uploadProfileImage = async (req, res) => {
       });
     }
 
-    const imageUrl = req.file.location; 
+    const imageUrl = req.file.location;
 
     // get old image
     const [[user]] = await db.query(
@@ -435,7 +440,7 @@ exports.uploadProfileImage = async (req, res) => {
 
     return res.json({
       success: true,
-      imageUrl: imageUrl, 
+      imageUrl: imageUrl,
     });
   } catch (err) {
     return res.status(500).json({
@@ -477,7 +482,6 @@ exports.getProfileImage = async (req, res) => {
 
 //DELETE PROFILE IMAGE
 
-
 exports.deleteProfileImage = async (req, res) => {
   try {
     const [[user]] = await db.query(
@@ -502,7 +506,7 @@ exports.deleteProfileImage = async (req, res) => {
       new DeleteObjectCommand({
         Bucket: "yodoctor.in",
         Key: key,
-      })
+      }),
     );
 
     // remove from DB

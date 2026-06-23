@@ -3,7 +3,7 @@ const db = require("../config/db");
 // GET /notifications/my-notifications
 exports.getMyNotifications = async (req, res) => {
   try {
-    const userId = req.user.id; // verifyToken middleware se aata hai
+    const userId = req.user.id; 
 
     const [notifications] = await db.query(
       "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC",

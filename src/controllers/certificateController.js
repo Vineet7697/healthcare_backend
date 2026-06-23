@@ -1151,11 +1151,13 @@ exports.getDocumentsByRequestId = async (req, res) => {
 // approveRequest Api
 
 exports.approveRequest = async (req, res) => {
+   console.log("API HIT");
   const logoPath = path.join(process.cwd(), "src/assets/logo.webp");
   const logoBase64 = fs.readFileSync(logoPath, { encoding: "base64" });
   const logo = `data:image/webp;base64,${logoBase64}`;
 
   try {
+     console.log("1");
     const { id } = req.params;
     const doctorUserId = req.user.id;
     const { doctor_notes, fitness_status, validity } = req.body;
@@ -1172,12 +1174,14 @@ exports.approveRequest = async (req, res) => {
       [doctorUserId],
     );
 
+    console.log("2");
+
     const doctor = doctorRows[0];
 
     if (doctorRows.length === 0) {
       return res.status(404).json({ message: "Doctor not found" });
     }
-
+ console.log("3");
     const doctorId = doctorRows[0].id;
     const doctorName = doctorRows[0].doctorName;
 
@@ -1250,6 +1254,8 @@ exports.approveRequest = async (req, res) => {
       }
     }
 
+      console.log("4");
+
     const html = generateHTML({
       certificate_id: certificateId,
       date: new Date().toLocaleDateString(),
@@ -1286,8 +1292,10 @@ exports.approveRequest = async (req, res) => {
       content: html,
     };
 
+    console.log("Step 1");
     // Generate PDF buffer
     const pdfBuffer = await html_to_pdf.generatePdf(file, options);
+    console.log("Step 2");
 
     // Save PDF
     fs.writeFileSync(filePath, pdfBuffer);
@@ -1393,6 +1401,7 @@ exports.approveRequest = async (req, res) => {
       message: "Certificate approved and PDF generated successfully",
       certificateId,
     });
+     console.log("5");
   } catch (error) {
     console.error("Approve Error:", error);
     res.status(500).json({ message: "Server Error" });

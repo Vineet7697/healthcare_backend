@@ -331,7 +331,7 @@ exports.getDoctorDetails = async (req, res) => {
       doctor: {
         id: doctor.id,
         doctorName: doctor.doctorName,
-            profile_image: doctor.profile_image,
+        profile_image: doctor.profile_image,
         gender: doctor.gender,
         bio: doctor.bio,
         degree: doctor.degree,
@@ -810,14 +810,13 @@ exports.updateContactStatus = async (req, res) => {
   }
 };
 
-
 exports.deleteContactRequest = async (req, res) => {
   try {
     const { id } = req.params;
 
     const [result] = await db.query(
       "DELETE FROM contact_requests WHERE id = ?",
-      [id]
+      [id],
     );
 
     if (result.affectedRows === 0) {
@@ -840,3 +839,840 @@ exports.deleteContactRequest = async (req, res) => {
   }
 };
 
+exports.addLabTest = async (req, res) => {
+  try {
+    const {
+      category_id,
+      name,
+      tagline,
+      price,
+      mrp,
+      parameters,
+      report_time,
+      fasting,
+      tier,
+      type,
+      description,
+      image,
+      is_popular,
+      includes = [],
+    } = req.body;
+
+    const [result] = await db.query(
+      `
+      INSERT INTO lab_tests
+      (
+        category_id,
+        name,
+        tagline,
+        price,
+        mrp,
+        parameters,
+        report_time,
+        fasting,
+        tier,
+        type,
+        description,
+        image,
+        is_popular
+      )
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `,
+      [
+        category_id,
+        name,
+        tagline,
+        price,
+        mrp,
+        parameters,
+        report_time,
+        fasting,
+        tier,
+        type,
+        description,
+        image,
+        is_popular ? 1 : 0,
+      ],
+    );
+
+    const testId = result.insertId;
+
+    if (includes.length) {
+      for (const item of includes) {
+        await db.query(
+          `
+          INSERT INTO lab_test_includes
+          (
+            test_id,
+            include_name
+          )
+          VALUES (?,?)
+          `,
+          [testId, item],
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Lab Test Added Successfully",
+      testId,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getLabTests = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        lt.*,
+        lc.name AS category_name
+      FROM lab_tests lt
+      LEFT JOIN lab_categories lc
+      ON lt.category_id = lc.id
+      ORDER BY lt.id DESC
+    `);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getLabTestById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.query(
+      `
+      SELECT *
+      FROM lab_tests
+      WHERE id = ?
+      `,
+      [id],
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Test not found",
+      });
+    }
+
+    const [includes] = await db.query(
+      `
+      SELECT include_name
+      FROM lab_test_includes
+      WHERE test_id=?
+      `,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...rows[0],
+        includes,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updateLabTest = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      category_id,
+      name,
+      tagline,
+      price,
+      mrp,
+      parameters,
+      report_time,
+      fasting,
+      tier,
+      type,
+      description,
+      image,
+      badge,
+      is_popular,
+      is_active,
+      includes = [],
+    } = req.body;
+
+    await db.query(
+      `
+      UPDATE lab_tests
+      SET
+        category_id=?,
+        name=?,
+        tagline=?,
+        price=?,
+        mrp=?,
+        parameters=?,
+        report_time=?,
+        fasting=?,
+        tier=?,
+        type=?,
+        description=?,
+        image=?,
+        badge=?,
+        is_popular=?,
+        is_active=?
+      WHERE id=?
+      `,
+      [
+        category_id,
+        name,
+        tagline,
+        price,
+        mrp,
+        parameters,
+        report_time,
+        fasting,
+        tier,
+        type,
+        description,
+        image,
+        badge,
+        is_popular,
+        is_active,
+        id,
+      ],
+    );
+
+    await db.query(
+      `
+      DELETE FROM lab_test_includes
+      WHERE test_id=?
+      `,
+      [id],
+    );
+
+    if (includes.length) {
+      for (const item of includes) {
+        await db.query(
+          `
+          INSERT INTO lab_test_includes
+          (
+            test_id,
+            include_name
+          )
+          VALUES (?,?)
+          `,
+          [id, item],
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "Test Updated Successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.addLabPackage = async (req, res) => {
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const {
+      category_id,
+      name,
+      tagline,
+      description,
+      image,
+      price,
+      mrp,
+      tier,
+      badge,
+      is_popular,
+      tests,
+      parameters,
+      report_time,
+      fasting,
+    } = req.body;
+
+    const [result] = await conn.query(
+      `
+  INSERT INTO lab_tests
+  (
+    category_id,
+    name,
+    type,
+    tagline,
+    description,
+    image,
+    price,
+    mrp,
+    tier,
+    badge,
+    is_popular,
+    parameters,
+    report_time,
+    fasting
+  )
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `,
+      [
+        category_id,
+        name,
+        "package",
+        tagline,
+        description,
+        image,
+        price,
+        mrp,
+        tier,
+        badge || null,
+        is_popular ? 1 : 0,
+        parameters || null,
+        report_time || null,
+        fasting || null,
+      ],
+    );
+
+    const packageId = result.insertId;
+
+    if (tests?.length) {
+      for (const testId of tests) {
+        await conn.query(
+          `
+          INSERT INTO lab_package_tests
+          (
+            package_id,
+            test_id
+          )
+          VALUES (?,?)
+          `,
+          [packageId, testId],
+        );
+      }
+    }
+
+    await conn.commit();
+
+    res.json({
+      success: true,
+      message: "Package Added Successfully",
+      packageId,
+    });
+  } catch (error) {
+    await conn.rollback();
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+exports.getLabPackages = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        lt.*,
+        lc.name AS category_name
+      FROM lab_tests lt
+      LEFT JOIN lab_categories lc
+      ON lt.category_id = lc.id
+      WHERE lt.type='package'
+      ORDER BY lt.id DESC
+    `);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getLabPackageById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [pkg] = await db.query(
+      `
+      SELECT *
+      FROM lab_tests
+      WHERE id=?
+      AND type='package'
+      `,
+      [id],
+    );
+
+    if (!pkg.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Package not found",
+      });
+    }
+
+    const [tests] = await db.query(
+      `
+      SELECT
+        lt.id,
+        lt.name
+      FROM lab_package_tests lpt
+      JOIN lab_tests lt
+      ON lpt.test_id = lt.id
+      WHERE lpt.package_id=?
+      `,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...pkg[0],
+        tests,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updateLabPackage = async (req, res) => {
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const { id } = req.params;
+
+    const {
+      category_id,
+      name,
+      tagline,
+      description,
+      image,
+      price,
+      mrp,
+      tier,
+      badge,
+      is_popular,
+      is_active,
+      tests,
+    } = req.body;
+
+    await conn.query(
+      `
+      UPDATE lab_tests
+      SET
+        category_id=?,
+        name=?,
+        tagline=?,
+        description=?,
+        image=?,
+        price=?,
+        mrp=?,
+        tier=?,
+        badge=?,
+        is_popular=?,
+        is_active=?
+      WHERE id=?
+      `,
+      [
+        category_id,
+        name,
+        tagline,
+        description,
+        image,
+        price,
+        mrp,
+        tier,
+        badge,
+        is_popular,
+        is_active,
+        id,
+      ],
+    );
+
+    await conn.query(
+      `
+      DELETE FROM lab_package_tests
+      WHERE package_id=?
+      `,
+      [id],
+    );
+
+    if (tests?.length) {
+      for (const testId of tests) {
+        await conn.query(
+          `
+          INSERT INTO lab_package_tests
+          (
+            package_id,
+            test_id
+          )
+          VALUES (?,?)
+          `,
+          [id, testId],
+        );
+      }
+    }
+
+    await conn.commit();
+
+    res.json({
+      success: true,
+      message: "Package Updated Successfully",
+    });
+  } catch (error) {
+    await conn.rollback();
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+exports.getAllLabBookings = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        lb.*,
+        COUNT(lbi.id) AS tests
+      FROM lab_bookings lb
+      LEFT JOIN lab_booking_items lbi
+      ON lb.id = lbi.booking_id
+      GROUP BY lb.id
+      ORDER BY lb.id DESC
+    `);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getAdminLabBookingDetails = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const [booking] = await db.query(
+      `
+      SELECT *
+      FROM lab_bookings
+      WHERE booking_id=?
+      `,
+      [bookingId],
+    );
+
+    if (!booking.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    const [tests] = await db.query(
+      `
+      SELECT *
+      FROM lab_booking_items
+      WHERE booking_id=?
+      `,
+      [booking[0].id],
+    );
+
+    const [timeline] = await db.query(
+      `
+      SELECT *
+      FROM lab_booking_tracking
+      WHERE booking_id=?
+      ORDER BY id ASC
+      `,
+      [booking[0].id],
+    );
+
+    const [reports] = await db.query(
+      `
+      SELECT *
+      FROM lab_reports
+      WHERE booking_id=?
+      ORDER BY id DESC
+      `,
+      [booking[0].id],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        booking: booking[0],
+        tests,
+        timeline,
+        reports,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updateLabBookingStatus = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const { status, remarks } = req.body;
+
+    const [booking] = await db.query(
+      `
+      SELECT id
+      FROM lab_bookings
+      WHERE booking_id=?
+      `,
+      [bookingId],
+    );
+
+    if (!booking.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    await db.query(
+      `
+      UPDATE lab_bookings
+      SET status=?
+      WHERE booking_id=?
+      `,
+      [status, bookingId],
+    );
+
+    await db.query(
+      `
+      INSERT INTO lab_booking_tracking
+      (
+        booking_id,
+        status,
+        remarks
+      )
+      VALUES (?,?,?)
+      `,
+      [booking[0].id, status, remarks || null],
+    );
+
+    res.json({
+      success: true,
+      message: "Status Updated",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.uploadLabReport = async (req, res) => {
+
+  try {
+    console.log("FILE =", req.file);
+    const { bookingId } = req.params;
+
+    const [booking] = await db.query(
+      `
+      SELECT id
+      FROM lab_bookings
+      WHERE booking_id=?
+      `,
+      [bookingId],
+    );
+
+    if (!booking.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Report file required",
+      });
+    }
+
+    await db.query(
+      `
+      INSERT INTO lab_reports
+      (
+        booking_id,
+        report_file,
+        uploaded_by
+      )
+      VALUES (?,?,?)
+      `,
+      [booking[0].id, req.file.path, req.user.id],
+    );
+
+    await db.query(
+      `
+      UPDATE lab_bookings
+      SET status='Completed'
+      WHERE booking_id=?
+      `,
+      [bookingId],
+    );
+
+    await db.query(
+      `
+      INSERT INTO lab_booking_tracking
+      (
+        booking_id,
+        status,
+        remarks
+      )
+      VALUES (?,?,?)
+      `,
+      [booking[0].id, "Completed", "Report Uploaded"],
+    );
+
+    res.json({
+      success: true,
+      message: "Report Uploaded",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.getLabReport = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const [rows] = await db.query(
+      `
+      SELECT lr.*
+      FROM lab_reports lr
+      JOIN lab_bookings lb
+      ON lb.id = lr.booking_id
+      WHERE lb.booking_id=?
+      ORDER BY lr.id DESC
+      LIMIT 1
+      `,
+      [bookingId],
+    );
+
+    res.json({
+      success: true,
+      data: rows[0] || null,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updatePackageStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await db.query(
+      `
+      UPDATE lab_tests
+      SET is_active =
+      CASE
+        WHEN is_active = 1 THEN 0
+        ELSE 1
+      END
+      WHERE id = ?
+      AND type = 'package'
+      `,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      message: "Status updated",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+exports.updateTestStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await db.query(
+      `
+      UPDATE lab_tests
+      SET is_active =
+      CASE
+        WHEN is_active = 1 THEN 0
+        ELSE 1
+      END
+      WHERE id = ?
+      AND type = 'test'
+      `,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      message: "Status updated",
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};

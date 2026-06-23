@@ -1,8 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const patientController = require("../controllers/patientController");
-// const staffController = require("../controllers/staffController");
-// const authController = require("../controllers/authController");
+
 const { verifyToken } = require("../middleware/auth");
 const { allowRoles } = require("../middleware/roles");
 const { requireActiveUser } = require("../middleware/activeUser");
@@ -10,7 +9,6 @@ const upload = require("../middleware/upload.middleware");
 
 // Auth
 router.post("/register", patientController.register);
-// router.post("/login", authController.login);
 
 // Profile
 router.get("/getprofile", verifyToken, patientController.getProfile);
@@ -134,5 +132,35 @@ router.post("/bookhomecare", patientController.bookhomecareservices);
 
 // ✅ GET API
 router.get("/getbookhomecare", patientController.getbookhomecareservices);
+
+
+
+// Lab Categories
+router.get("/lab/categories", patientController.getCategories);
+
+// All Tests
+router.get("/lab/tests", patientController.getTests);
+
+// Popular Tests
+router.get("/lab/tests/popular", patientController.getPopularTests);
+
+// Packages
+router.get("/lab/packages", patientController.getPackages);
+
+// Single Test Details
+router.get("/lab/tests/:id", patientController.getTestDetails);
+
+// Create Booking
+router.post("/lab-bookings", verifyToken, patientController.createBooking);
+
+// My Lab Bookings
+router.get("/lab-bookings", verifyToken, patientController.getLabBookings);
+
+// Single Booking Details
+router.get(
+  "/lab-bookings/:bookingId",
+  verifyToken,
+  patientController.getLabBookingDetails,
+);
 
 module.exports = router;

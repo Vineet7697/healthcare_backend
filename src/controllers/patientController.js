@@ -695,7 +695,7 @@ exports.getCurrentToken = async (req, res) => {
        WHERE doctor_id = ?
        AND DATE(appointment_date) = DATE(?)
        AND UPPER(appointment_slot) = UPPER(?)`,
-      [doctorId, appointmentDate, appointmentSlot]
+      [doctorId, appointmentDate, appointmentSlot],
     );
 
     console.log("DB Result:", result);
@@ -1167,7 +1167,7 @@ exports.cancelAppointment = async (req, res) => {
        AND patient_id = ?
        AND status IN ('PENDING','ACCEPTED')
        AND appointment_date >= CURDATE()`,
-      [appointmentId, userId]
+      [appointmentId, userId],
     );
 
     if (result.affectedRows === 0) {
@@ -2130,26 +2130,53 @@ exports.bookhomecareservices = async (req, res) => {
   try {
     const {
       full_name,
+      patient_age,
+      patient_gender,
+
+      patient_latitude,
+      patient_longitude,
+
+      gender_preference,
+      emergency_booking,
+
       address,
       contact_number,
+
       service_type,
       medical_condition,
+
       duration_type,
       number_of_days,
+
       preferred_date,
       time_slot,
+
       notes,
     } = req.body;
 
     const query = `
-      INSERT INTO homecareservice 
-      (full_name, address, contact_number, service_type, medical_condition,
-       duration_type, number_of_days, preferred_date, time_slot, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+INSERT INTO homecareservice
+(
+  full_name,
+  patient_latitude,
+  patient_longitude,
+  address,
+  contact_number,
+  service_type,
+  medical_condition,
+  duration_type,
+  number_of_days,
+  preferred_date,
+  time_slot,
+  notes
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
 
     const [result] = await db.execute(query, [
       full_name,
+      patient_latitude,
+      patient_longitude,
       address,
       contact_number,
       service_type,
@@ -2190,6 +2217,404 @@ exports.getbookhomecareservices = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
+    });
+  }
+};
+
+// =========================
+// GET CATEGORIES
+// =========================
+
+exports.getCategories = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT *
+      FROM lab_categories
+      WHERE is_active = 1
+      ORDER BY name ASC
+    `);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// =========================
+// GET ALL TESTS
+// =========================
+
+exports.getTests = async (req, res) => {
+  try {
+    const { search, category, tier } = req.query;
+
+    let sql = `
+      SELECT *
+      FROM lab_tests
+      WHERE is_active = 1
+    `;
+
+    const params = [];
+
+    if (search) {
+      sql += `
+        AND (
+          name LIKE ?
+          OR tagline LIKE ?
+        )
+      `;
+      params.push(`%${search}%`);
+      params.push(`%${search}%`);
+    }
+
+    if (category) {
+      sql += ` AND category_id = ? `;
+      params.push(category);
+    }
+
+    if (tier) {
+      sql += ` AND tier = ? `;
+      params.push(tier);
+    }
+
+    sql += ` ORDER BY id DESC`;
+
+    const [rows] = await db.query(sql, params);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// =========================
+// POPULAR TESTS
+// =========================
+
+exports.getPopularTests = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT *
+      FROM lab_tests
+      WHERE
+      is_popular = 1
+      AND is_active = 1
+      LIMIT 8
+    `);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// =========================
+// PACKAGES
+// =========================
+
+exports.getPackages = async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT *
+      FROM lab_tests
+      WHERE
+      type='package'
+      AND is_active=1
+    `);
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// =========================
+// TEST DETAILS
+// =========================
+
+exports.getTestDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [test] = await db.query(
+      `
+      SELECT *
+      FROM lab_tests
+      WHERE id=?
+      `,
+      [id],
+    );
+
+    if (!test.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Test not found",
+      });
+    }
+
+    const [includes] = await db.query(
+      `
+      SELECT include_name
+      FROM lab_test_includes
+      WHERE test_id=?
+      `,
+      [id],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...test[0],
+        includes,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// =========================
+// CREATE BOOKING
+// =========================
+
+exports.createBooking = async (req, res) => {
+  const conn = await db.getConnection();
+
+  try {
+    await conn.beginTransaction();
+
+    const {
+      patientName,
+      age,
+      gender,
+      phone,
+      address,
+      latitude,
+      longitude,
+      bookingDate,
+      bookingTime,
+      tests,
+    } = req.body;
+
+    const bookingId = "YDLAB" + Date.now();
+
+    const [selectedTests] = await conn.query(
+      `
+        SELECT
+        id,
+        name,
+        price
+        FROM lab_tests
+        WHERE id IN (?)
+        `,
+      [tests],
+    );
+
+    const totalAmount = selectedTests.reduce(
+      (sum, item) => sum + Number(item.price),
+      0,
+    );
+
+    const [booking] = await conn.query(
+      `
+        INSERT INTO lab_bookings
+        (
+          booking_id,
+          user_id,
+          patient_name,
+          age,
+          gender,
+          phone,
+          address,
+          latitude,
+          longitude,
+          booking_date,
+          booking_time,
+          total_amount
+        )
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        `,
+      [
+        bookingId,
+        req.user.id,
+        patientName,
+        age,
+        gender,
+        phone,
+        address,
+        latitude,
+        longitude,
+        bookingDate,
+        bookingTime,
+        totalAmount,
+      ],
+    );
+
+    for (const item of selectedTests) {
+      await conn.query(
+        `
+        INSERT INTO
+        lab_booking_items
+        (
+          booking_id,
+          test_id,
+          test_name,
+          price
+        )
+        VALUES (?,?,?,?)
+        `,
+        [booking.insertId, item.id, item.name, item.price],
+      );
+    }
+
+    await conn.query(
+      `
+      INSERT INTO
+      lab_booking_tracking
+      (
+        booking_id,
+        status,
+        remarks
+      )
+      VALUES (?,?,?)
+      `,
+      [booking.insertId, "Confirmed", "Booking Created"],
+    );
+
+    await conn.commit();
+
+    return res.json({
+      success: true,
+      bookingId,
+      bookingDbId: booking.insertId,
+      amount: totalAmount,
+    });
+  } catch (error) {
+    await conn.rollback();
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  } finally {
+    conn.release();
+  }
+};
+
+// =========================
+// MY BOOKINGS
+// =========================
+
+exports.getLabBookings = async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `
+       SELECT
+lb.*,
+COUNT(lbi.id) AS tests
+FROM lab_bookings lb
+LEFT JOIN lab_booking_items lbi
+ON lb.id = lbi.booking_id
+WHERE lb.user_id = ?
+GROUP BY lb.id
+ORDER BY lb.id DESC
+        `,
+      [req.user.id],
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// =========================
+// BOOKING DETAILS
+// =========================
+
+exports.getLabBookingDetails = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+
+    const [booking] = await db.query(
+      `
+        SELECT *
+        FROM lab_bookings
+        WHERE booking_id=?
+        `,
+      [bookingId],
+    );
+
+    if (!booking.length) {
+      return res.status(404).json({
+        success: false,
+      });
+    }
+
+    const [tests] = await db.query(
+      `
+        SELECT *
+        FROM lab_booking_items
+        WHERE booking_id=?
+        `,
+      [booking[0].id],
+    );
+
+    const [timeline] = await db.query(
+      `
+        SELECT *
+        FROM lab_booking_tracking
+        WHERE booking_id=?
+        ORDER BY id ASC
+        `,
+      [booking[0].id],
+    );
+
+    res.json({
+      success: true,
+      data: {
+        booking: booking[0],
+        tests,
+        timeline,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };
