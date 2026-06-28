@@ -23,7 +23,13 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
-app.use(helmet());
+// app.use(helmet());
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
 
 const expireCertificatesJob = require("../cron/expireCertificates");
 const EVENTS = require("./events/notification.events");

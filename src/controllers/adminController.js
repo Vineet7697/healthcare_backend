@@ -58,10 +58,13 @@ exports.getDoctors = async (req, res) => {
         d.action_reason,
         d.rating,
         d.experience_years,
-        u.profile_image
+        u.profile_image,
+         COALESCE(s.status, 'pending') AS subscription_status
       FROM doctors d
       JOIN users u ON u.id = d.user_id
-      LEFT JOIN doctor_clinics dc ON dc.doctor_id = d.id   -- ✅ FIX
+      LEFT JOIN doctor_clinics dc ON dc.doctor_id = d.id   
+       LEFT JOIN subscriptions s
+        ON s.user_id = d.user_id
     `;
 
     const params = [];
@@ -599,12 +602,34 @@ exports.getAdminNotifications = async (req, res) => {
 // ✅ FIXED: added try/catch
 exports.getPatients = async (req, res) => {
   try {
-    const [patients] = await db.query(
-      `SELECT id, email, is_active FROM users WHERE role='PATIENT'`,
-    );
-    res.json({ patients });
+    const [patients] = await db.query(`
+      SELECT
+        p.id,
+        p.user_id,
+        p.fullName,
+        p.phone AS mobile,
+        p.email,
+        p.gender,
+        p.dob,
+        u.profile_image,
+        u.is_active
+      FROM patients p
+      INNER JOIN users u
+        ON p.user_id = u.id
+      ORDER BY p.id DESC
+    `);
+
+    res.json({
+      success: true,
+      patients,
+    });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 
@@ -612,12 +637,24 @@ exports.getPatients = async (req, res) => {
 // ✅ FIXED: added try/catch
 exports.blockUser = async (req, res) => {
   try {
-    await db.query(`UPDATE users SET is_active=FALSE WHERE id=?`, [
-      req.params.id,
-    ]);
-    res.json({ message: "User blocked" });
+    const { id } = req.params;
+
+    await db.query(
+      "UPDATE users SET is_active = FALSE WHERE id = ? AND role='PATIENT'",
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Patient blocked successfully",
+    });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error(err);
+
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 
@@ -625,12 +662,24 @@ exports.blockUser = async (req, res) => {
 // ✅ FIXED: added try/catch
 exports.unblockUser = async (req, res) => {
   try {
-    await db.query(`UPDATE users SET is_active=TRUE WHERE id=?`, [
-      req.params.id,
-    ]);
-    res.json({ message: "User unblocked" });
+    const { id } = req.params;
+
+    await db.query(
+      "UPDATE users SET is_active = TRUE WHERE id = ? AND role='PATIENT'",
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Patient unblocked successfully",
+    });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error(err);
+
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
 
@@ -853,10 +902,13 @@ exports.addLabTest = async (req, res) => {
       tier,
       type,
       description,
-      image,
       is_popular,
       includes = [],
     } = req.body;
+
+    // Uploaded image path
+
+    const image = `/uploads/lab-tests/${req.file.filename}`;
 
     const [result] = await db.query(
       `
@@ -897,7 +949,7 @@ exports.addLabTest = async (req, res) => {
 
     const testId = result.insertId;
 
-    if (includes.length) {
+    if (includes?.length) {
       for (const item of includes) {
         await db.query(
           `
@@ -917,6 +969,7 @@ exports.addLabTest = async (req, res) => {
       success: true,
       message: "Lab Test Added Successfully",
       testId,
+      image,
     });
   } catch (error) {
     res.status(500).json({
@@ -925,7 +978,6 @@ exports.addLabTest = async (req, res) => {
     });
   }
 };
-
 exports.getLabTests = async (req, res) => {
   try {
     const [rows] = await db.query(`
@@ -996,6 +1048,8 @@ exports.getLabTestById = async (req, res) => {
 
 exports.updateLabTest = async (req, res) => {
   try {
+    console.log("FILE:", req.file);
+    console.log("BODY:", req.body);
     const { id } = req.params;
 
     const {
@@ -1010,12 +1064,25 @@ exports.updateLabTest = async (req, res) => {
       tier,
       type,
       description,
-      image,
       badge,
       is_popular,
       is_active,
       includes = [],
     } = req.body;
+
+    // Purani image nikalo
+    const [rows] = await db.query("SELECT image FROM lab_tests WHERE id=?", [
+      id,
+    ]);
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Lab Test not found",
+      });
+    }
+
+    const image = `/uploads/lab-tests/${req.file.filename}`;
 
     await db.query(
       `
@@ -1051,13 +1118,14 @@ exports.updateLabTest = async (req, res) => {
         type,
         description,
         image,
-        badge,
-        is_popular,
-        is_active,
+        badge || null,
+        is_popular ? 1 : 0,
+        is_active ? 1 : 0,
         id,
       ],
     );
 
+    // Purane includes delete karo
     await db.query(
       `
       DELETE FROM lab_test_includes
@@ -1066,7 +1134,8 @@ exports.updateLabTest = async (req, res) => {
       [id],
     );
 
-    if (includes.length) {
+    // Naye includes add karo
+    if (includes && includes.length > 0) {
       for (const item of includes) {
         await db.query(
           `
@@ -1085,8 +1154,11 @@ exports.updateLabTest = async (req, res) => {
     res.json({
       success: true,
       message: "Test Updated Successfully",
+      image,
     });
   } catch (error) {
+    console.error("UPDATE LAB TEST ERROR:", error);
+
     res.status(500).json({
       success: false,
       message: error.message,
@@ -1105,7 +1177,6 @@ exports.addLabPackage = async (req, res) => {
       name,
       tagline,
       description,
-      image,
       price,
       mrp,
       tier,
@@ -1117,27 +1188,31 @@ exports.addLabPackage = async (req, res) => {
       fasting,
     } = req.body;
 
+    // Get uploaded image URL/path
+
+    const image = `/uploads/lab-tests/${req.file.filename}`;
+
     const [result] = await conn.query(
       `
-  INSERT INTO lab_tests
-  (
-    category_id,
-    name,
-    type,
-    tagline,
-    description,
-    image,
-    price,
-    mrp,
-    tier,
-    badge,
-    is_popular,
-    parameters,
-    report_time,
-    fasting
-  )
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `,
+      INSERT INTO lab_tests
+      (
+        category_id,
+        name,
+        type,
+        tagline,
+        description,
+        image,
+        price,
+        mrp,
+        tier,
+        badge,
+        is_popular,
+        parameters,
+        report_time,
+        fasting
+      )
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `,
       [
         category_id,
         name,
@@ -1180,6 +1255,7 @@ exports.addLabPackage = async (req, res) => {
       success: true,
       message: "Package Added Successfully",
       packageId,
+      image,
     });
   } catch (error) {
     await conn.rollback();
@@ -1280,7 +1356,6 @@ exports.updateLabPackage = async (req, res) => {
       name,
       tagline,
       description,
-      image,
       price,
       mrp,
       tier,
@@ -1288,7 +1363,19 @@ exports.updateLabPackage = async (req, res) => {
       is_popular,
       is_active,
       tests,
+      parameters,
+      report_time,
+      fasting,
     } = req.body;
+
+    // Purani image nikalo
+    const [oldPackage] = await conn.query(
+      "SELECT image FROM lab_tests WHERE id=?",
+      [id],
+    );
+
+    // Agar nayi image upload hui hai to use karo, warna purani image rakho
+    const image = `/uploads/lab-tests/${req.file.filename}`;
 
     await conn.query(
       `
@@ -1304,7 +1391,10 @@ exports.updateLabPackage = async (req, res) => {
         tier=?,
         badge=?,
         is_popular=?,
-        is_active=?
+        is_active=?,
+        parameters=?,
+        report_time=?,
+        fasting=?
       WHERE id=?
       `,
       [
@@ -1316,32 +1406,22 @@ exports.updateLabPackage = async (req, res) => {
         price,
         mrp,
         tier,
-        badge,
-        is_popular,
-        is_active,
+        badge || null,
+        is_popular ? 1 : 0,
+        is_active ? 1 : 0,
+        parameters || null,
+        report_time || null,
+        fasting || null,
         id,
       ],
     );
 
-    await conn.query(
-      `
-      DELETE FROM lab_package_tests
-      WHERE package_id=?
-      `,
-      [id],
-    );
+    await conn.query(`DELETE FROM lab_package_tests WHERE package_id=?`, [id]);
 
     if (tests?.length) {
       for (const testId of tests) {
         await conn.query(
-          `
-          INSERT INTO lab_package_tests
-          (
-            package_id,
-            test_id
-          )
-          VALUES (?,?)
-          `,
+          `INSERT INTO lab_package_tests (package_id, test_id) VALUES (?, ?)`,
           [id, testId],
         );
       }
@@ -1352,6 +1432,7 @@ exports.updateLabPackage = async (req, res) => {
     res.json({
       success: true,
       message: "Package Updated Successfully",
+      image,
     });
   } catch (error) {
     await conn.rollback();
@@ -1513,7 +1594,6 @@ exports.updateLabBookingStatus = async (req, res) => {
 };
 
 exports.uploadLabReport = async (req, res) => {
-
   try {
     console.log("FILE =", req.file);
     const { bookingId } = req.params;
